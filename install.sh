@@ -37,7 +37,7 @@ step()  { echo -e "\n${BOLD}==> $*${RESET}"; }
 # ---------------------------------------------------------------------------
 if [[ "${1:-}" == "--uninstall" ]]; then
   step "Uninstalling dnsfilter"
-  systemctl stop  ${SERVICE_DNS} ${SERVICE_UI} squid 2>/dev/null || true
+  systemctl stop  ${SERVICE_DNS} ${SERVICE_UI} 2>/dev/null || true
   systemctl disable ${SERVICE_DNS} ${SERVICE_UI} 2>/dev/null || true
   rm -f /etc/systemd/system/${SERVICE_DNS}.service
   rm -f /etc/systemd/system/${SERVICE_UI}.service
@@ -118,21 +118,23 @@ PYEOF
 )
 printf '%s' "${ADMIN_PASS_HASH}" > "${CONFIG_DIR}/admin_pass.hash"
 chmod 600 "${CONFIG_DIR}/admin_pass.hash"
+# Write plaintext to a root-only file immediately — shown in summary and here
+printf '%s' "${ADMIN_PASS}" > "${CONFIG_DIR}/admin_pass.txt"
+chmod 600 "${CONFIG_DIR}/admin_pass.txt"
 ok "Admin password generated (shown in summary)"
+echo -e "  ${YELLOW}Admin password: ${BOLD}${ADMIN_PASS}${RESET}  (also saved to ${CONFIG_DIR}/admin_pass.txt)"
 
 # ---------------------------------------------------------------------------
 # System packages
 # ---------------------------------------------------------------------------
 step "Installing system packages"
-apt-get update -qq
-apt-get install -y --no-install-recommends \
+apt-get update -q || fail "apt-get update failed — check your internet connection"
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   python3 python3-pip python3-venv \
   iptables iptables-persistent \
   netfilter-persistent \
-  ip6tables \
-  squid \
   curl ca-certificates dnsutils \
-  2>/dev/null
+  || fail "apt-get install failed — run: sudo apt-get install -f && sudo dpkg --configure -a"
 ok "System packages ready"
 
 # ---------------------------------------------------------------------------
