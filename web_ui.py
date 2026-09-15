@@ -381,15 +381,26 @@ async function api(path, opts={}) {
   return r.json();
 }
 
-async function loadDashboard() {
-  const [stats, recent] = await Promise.all([api('/stats'), api('/logs?limit=20')]);
+let _dashLastId = 0;
+async function loadDashboard(merge=false) {
+  const sinceParam = (merge && _dashLastId) ? '&since_id=' + _dashLastId : '';
+  const [stats, recent] = await Promise.all([
+    api('/stats'),
+    api('/logs?limit=100' + sinceParam)
+  ]);
   document.getElementById('s-blocked').textContent = stats.blocked_rules ?? '—';
   document.getElementById('s-queries').textContent = stats.queries_today ?? '—';
   document.getElementById('s-pct').textContent = stats.block_rate ? stats.block_rate + '%' : '—';
   document.getElementById('s-allow').textContent = stats.allowlist ?? '—';
   document.getElementById('status-badge').textContent = 'Running';
+  const logs = recent.logs || [];
+  if (logs.length) _dashLastId = Math.max(_dashLastId, ...logs.map(r => r.id));
   const tb = document.getElementById('recent-log');
-  tb.innerHTML = (recent.logs || []).map(logRow).join('');
+  if (merge && tb.innerHTML) {
+    tb.insertAdjacentHTML('afterbegin', logs.map(logRow).join(''));
+  } else {
+    tb.innerHTML = logs.map(logRow).join('');
+  }
 }
 
 async function loadBlocklist() {
@@ -534,7 +545,7 @@ async function changePassword() {
 }
 
 loadDashboard();
-setInterval(() => { if (currentTab === 'dashboard') loadDashboard(); }, 10000);
+setInterval(() => { if (currentTab === 'dashboard') loadDashboard(true); }, 8000);
 </script>
 </body>
 </html>
@@ -670,6 +681,7 @@ def logs():
     limit = int(request.args.get("limit", 100))
     q = request.args.get("q", "")
     action = request.args.get("action", "")
+    since_id = request.args.get("since_id", "")
     clauses = []
     params = []
     if q:
@@ -678,6 +690,12 @@ def logs():
     if action:
         clauses.append("action=?")
         params.append(action)
+    if since_id:
+        try:
+            clauses.append("id > ?")
+            params.append(int(since_id))
+        except ValueError:
+            pass
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     rows = conn.execute(
         f"SELECT * FROM query_log {where} ORDER BY id DESC LIMIT ?",
