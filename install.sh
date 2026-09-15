@@ -104,10 +104,19 @@ fi
 # Generate admin password
 # ---------------------------------------------------------------------------
 step "Generating admin credentials"
-ADMIN_PASS=$(tr -dc 'A-Za-z0-9!@#$' </dev/urandom | head -c 16)
-ADMIN_PASS_HASH=$(python3 -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" "${ADMIN_PASS}")
 mkdir -p "${CONFIG_DIR}"
-echo "${ADMIN_PASS_HASH}" > "${CONFIG_DIR}/admin_pass.hash"
+# Safe charset — no $, !, or quotes that bash expands inside $()
+ADMIN_PASS=$(cat /dev/urandom | tr -dc 'A-Za-z0-9@#%^' | head -c 16 || true)
+# Fallback if tr pipeline exit code trips set -e
+if [[ -z "${ADMIN_PASS:-}" ]]; then
+  ADMIN_PASS=$(python3 -c "import secrets; print(secrets.token_urlsafe(12))")
+fi
+ADMIN_PASS_HASH=$(python3 - "${ADMIN_PASS}" << 'PYEOF'
+import hashlib, sys
+print(hashlib.sha256(sys.argv[1].encode()).hexdigest())
+PYEOF
+)
+printf '%s' "${ADMIN_PASS_HASH}" > "${CONFIG_DIR}/admin_pass.hash"
 chmod 600 "${CONFIG_DIR}/admin_pass.hash"
 ok "Admin password generated (shown in summary)"
 
