@@ -181,6 +181,23 @@ m.init_db()
 ok "Database ready at ${DB_PATH}"
 
 # ---------------------------------------------------------------------------
+# Disable systemd-resolved stub listener so it frees port 53
+# ---------------------------------------------------------------------------
+step "Freeing port 53 from systemd-resolved"
+RESOLVED_CONF="/etc/systemd/resolved.conf"
+# Remove any existing DNSStubListener line and append the correct one
+sed -i '/^DNSStubListener/d' "${RESOLVED_CONF}"
+echo "DNSStubListener=no" >> "${RESOLVED_CONF}"
+systemctl restart systemd-resolved 2>/dev/null || true
+sleep 1
+# Verify port 53 is free
+if ss -tulpn 2>/dev/null | grep -q "127.0.0.53:53"; then
+  warn "systemd-resolved still on :53 — DNS server may fail to bind"
+else
+  ok "Port 53 is free"
+fi
+
+# ---------------------------------------------------------------------------
 # sysctl — IP forwarding (v4 + v6)
 # ---------------------------------------------------------------------------
 step "Enabling IP forwarding (IPv4 + IPv6)"
@@ -191,6 +208,25 @@ done
 ok "IP forwarding enabled"
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# UFW — disable or configure to allow DNS through
+# ---------------------------------------------------------------------------
+step "Configuring firewall (UFW)"
+if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
+  info "UFW is active — opening required ports"
+  # Allow DNS from LAN clients
+  ufw allow in on "${MAIN_IF}" to any port 53 proto udp comment "dnsfilter-dns" || true
+  ufw allow in on "${MAIN_IF}" to any port 53 proto tcp comment "dnsfilter-dns" || true
+  # Allow admin UI
+  ufw allow in to any port ${UI_PORT} proto tcp comment "dnsfilter-ui" || true
+  # Allow established/related back through
+  ufw allow in on "${MAIN_IF}" comment "dnsfilter-forward" || true
+  ufw reload || true
+  ok "UFW rules added for DNS (:53) and admin UI (:${UI_PORT})"
+else
+  ok "UFW not active — no changes needed"
+fi
+
 # Helper: apply a rule to BOTH iptables and ip6tables
 # ---------------------------------------------------------------------------
 ipt_both() {
@@ -537,6 +573,134 @@ ok "DoH nightly IP refresh cron installed (03:00 daily)"
 # ---------------------------------------------------------------------------
 netfilter-persistent save
 ok "All iptables/ip6tables rules persisted"
+
+# ---------------------------------------------------------------------------
+# Seed blocklist — known VPN extension proxy domains
+# These are the domains Chrome/Firefox VPN extensions use for their proxies.
+# Blocking them at DNS level prevents the extension from connecting even
+# though the traffic itself runs over port 443.
+# ---------------------------------------------------------------------------
+step "Seeding VPN extension blocklist"
+
+python3 - << 'PYEOF'
+import sqlite3, os
+
+DB_PATH = "/etc/dnsfilter/blocklist.db"
+
+# Known proxy/control domains for popular VPN browser extensions
+# Sources: extension network analysis, published block lists
+VPN_EXTENSION_DOMAINS = [
+    # Browsec
+    ("*.browsec.com",        "wildcard"),
+    ("*.browsecorp.com",     "wildcard"),
+    # Hola VPN
+    ("*.hola.org",           "wildcard"),
+    ("*.holavpn.net",        "wildcard"),
+    ("*.bext.hola.org",      "wildcard"),
+    # ZenMate
+    ("*.zenmate.com",        "wildcard"),
+    ("*.zenguard.com",       "wildcard"),
+    # Windscribe
+    ("*.windscribe.com",     "wildcard"),
+    ("*.whiskergalaxy.com",  "wildcard"),
+    # TunnelBear
+    ("*.tunnelbear.com",     "wildcard"),
+    ("*.tnlbr.com",          "wildcard"),
+    # Hotspot Shield
+    ("*.hotspotshield.com",  "wildcard"),
+    ("*.apachemobile.com",   "wildcard"),
+    # Touch VPN / Anchorfree
+    ("*.touchvpn.net",       "wildcard"),
+    ("*.anchorfree.com",     "wildcard"),
+    ("*.anchorfree.net",     "wildcard"),
+    ("*.afsdk.com",          "wildcard"),
+    # ExpressVPN
+    ("*.expressvpn.com",     "wildcard"),
+    ("*.expresscdn.com",     "wildcard"),
+    ("*.xvpn.io",            "wildcard"),
+    # NordVPN extension
+    ("*.nordvpn.com",        "wildcard"),
+    ("*.nordcdn.com",        "wildcard"),
+    # ProtonVPN
+    ("*.protonvpn.com",      "wildcard"),
+    ("*.protonvpn.net",      "wildcard"),
+    # CyberGhost
+    ("*.cyberghostvpn.com",  "wildcard"),
+    # PIA (Private Internet Access)
+    ("*.privateinternetaccess.com", "wildcard"),
+    ("*.piaproxy.net",       "wildcard"),
+    # Ultrasurf
+    ("*.ultrasurf.us",       "wildcard"),
+    ("*.ultrareach.com",     "wildcard"),
+    # Psiphon
+    ("*.psiphon.ca",         "wildcard"),
+    ("*.psiphon3.com",       "wildcard"),
+    # SetupVPN
+    ("*.setupvpn.com",       "wildcard"),
+    # Urban VPN
+    ("*.urbanvpn.com",       "wildcard"),
+    # Planet VPN
+    ("*.peakaxis.com",       "wildcard"),
+    # DotVPN
+    ("*.dotvpn.com",         "wildcard"),
+    # friGate
+    ("*.frigate.io",         "wildcard"),
+    # Steganos
+    ("*.steganos.com",       "wildcard"),
+    # VeePN
+    ("*.veepn.com",          "wildcard"),
+    ("*.veepn.co",           "wildcard"),
+    # Avira Phantom VPN
+    ("*.avira-vpn.com",      "wildcard"),
+    # Opera VPN (built-in)
+    ("*.opera-proxy.net",    "wildcard"),
+    ("*.operaproxy.net",     "wildcard"),
+    # Lantern
+    ("*.getlantern.org",     "wildcard"),
+    # Kaspersky VPN
+    ("*.kaspersky-labs.com", "wildcard"),  # VPN component
+    # Betternet
+    ("*.betternet.co",       "wildcard"),
+    # VPN Unlimited / KeepSolid
+    ("*.keepsolid.com",      "wildcard"),
+    ("*.vpnunlimitedapp.com","wildcard"),
+    # Surfshark
+    ("*.surfshark.com",      "wildcard"),
+    # Mullvad browser extension
+    ("*.mullvad.net",        "wildcard"),
+    # IPVanish
+    ("*.ipvanish.com",       "wildcard"),
+    # hide.me
+    ("*.hide.me",            "wildcard"),
+    # Ivacy
+    ("*.ivacy.com",          "wildcard"),
+    # Namecheap VPN
+    ("*.namecheapvpn.com",   "wildcard"),
+]
+
+conn = sqlite3.connect(DB_PATH)
+added = 0
+for domain, dtype in VPN_EXTENSION_DOMAINS:
+    # Store without leading *. for wildcard matching
+    clean = domain.lstrip("*.")
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO blocklist(domain, type, source) VALUES(?,?,?)",
+            (clean, dtype, "vpn-extensions-builtin")
+        )
+        added += conn.execute("SELECT changes()").fetchone()[0]
+    except Exception as e:
+        print(f"  Skip {domain}: {e}")
+conn.commit()
+conn.close()
+print(f"  Added {added} VPN extension domains to blocklist")
+PYEOF
+
+# Signal DNS server to reload if already running
+if [[ -f /run/dnsfilter-dns.pid ]]; then
+  kill -USR1 $(cat /run/dnsfilter-dns.pid) 2>/dev/null || true
+fi
+ok "VPN extension domains seeded into blocklist"
 
 # ---------------------------------------------------------------------------
 # systemd — DNS server
