@@ -143,8 +143,13 @@ ok "System packages ready"
 step "Setting up Python virtual environment"
 mkdir -p "${INSTALL_DIR}"
 python3 -m venv "${INSTALL_DIR}/venv"
-"${INSTALL_DIR}/venv/bin/pip" install --quiet --upgrade pip
-"${INSTALL_DIR}/venv/bin/pip" install --quiet flask
+
+# Upgrade pip with timeout and fallback mirror
+"${INSTALL_DIR}/venv/bin/pip" install --quiet --upgrade pip   --timeout 30   -i https://pypi.org/simple   || "${INSTALL_DIR}/venv/bin/pip" install --quiet --upgrade pip        --timeout 30        -i https://pypi.tuna.tsinghua.edu.cn/simple   || warn "pip upgrade failed — continuing with bundled pip"
+
+# Install Flask with timeout and fallback mirror
+"${INSTALL_DIR}/venv/bin/pip" install --quiet flask   --timeout 30   -i https://pypi.org/simple   || "${INSTALL_DIR}/venv/bin/pip" install --quiet flask        --timeout 30        -i https://pypi.tuna.tsinghua.edu.cn/simple   || fail "Flask install failed — check internet connectivity: curl -I https://pypi.org"
+
 ok "Python venv ready"
 
 # ---------------------------------------------------------------------------
