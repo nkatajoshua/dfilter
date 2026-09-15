@@ -37,15 +37,17 @@ UPSTREAM_TIMEOUT = 5
 # Logging
 # ---------------------------------------------------------------------------
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_PATH),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
 log = logging.getLogger("dnsfilter")
+log.setLevel(logging.INFO)
+if not log.handlers:
+    _fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    _fh = logging.FileHandler(LOG_PATH)
+    _fh.setFormatter(_fmt)
+    _sh = logging.StreamHandler(sys.stdout)
+    _sh.setFormatter(_fmt)
+    log.addHandler(_fh)
+    log.addHandler(_sh)
+log.propagate = False
 
 # ---------------------------------------------------------------------------
 # Database
