@@ -76,8 +76,8 @@ Shared state:  /etc/dnsfilter/blocklist.db  (SQLite)
 ### Option 1 — Git clone (recommended)
 
 ```bash
-git clone https://github.com/<your-username>/dnsfilter.git
-cd dnsfilter
+git clone https://github.com/nkatajoshua/dfilter.git
+cd dfilter
 sudo bash install.sh
 ```
 
@@ -86,9 +86,9 @@ sudo bash install.sh
 ```bash
 sudo bash -c "
   cd /tmp &&
-  curl -sSL https://raw.githubusercontent.com/<your-username>/dnsfilter/main/dns_server.py -o dns_server.py &&
-  curl -sSL https://raw.githubusercontent.com/<your-username>/dnsfilter/main/web_ui.py     -o web_ui.py     &&
-  curl -sSL https://raw.githubusercontent.com/<your-username>/dnsfilter/main/install.sh    -o install.sh    &&
+  curl -sSL https://raw.githubusercontent.com/nkatajoshua/dfilter/main/dns_server.py -o dns_server.py &&
+  curl -sSL https://raw.githubusercontent.com/nkatajoshua/dfilter/main/web_ui.py     -o web_ui.py     &&
+  curl -sSL https://raw.githubusercontent.com/nkatajoshua/dfilter/main/install.sh    -o install.sh    &&
   bash install.sh
 "
 ```
