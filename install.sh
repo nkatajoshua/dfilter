@@ -134,6 +134,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   iptables iptables-persistent \
   netfilter-persistent \
   curl ca-certificates dnsutils \
+  sqlite3 \
   || fail "apt-get install failed — run: sudo apt-get install -f && sudo dpkg --configure -a"
 ok "System packages ready"
 
